@@ -22,6 +22,9 @@ void command_tick(double elapsed) {
   measured_tps=fmin(20,window_ticks*1000000.0/window_us);
   if(window_us>=5000000){window_us=0;window_ticks=0;}
 }
+double command_get_tps(void) {
+    return measured_tps;
+}
 static void reply(PlayerData *p,const char *s) {sc_systemChat(p->client_fd,(char*)s,strlen(s));}
 static uint8_t abilities(PlayerData *p) {
   int m=player_mode(p);return (m==1?9:0)|(m==3?1:0)|(player_can_fly(p)?4:0)|(player_is_flying(p)?2:0);

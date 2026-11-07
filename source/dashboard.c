@@ -285,35 +285,48 @@ void dashboard_render(const DashboardStats *stats) {
               white_r, white_g, white_b);
 
     // UPTIME
-    draw_text(fb, 215, 61, "UPTIME", 1,
-              muted_r, muted_g, muted_b);
+    draw_text(fb, 215, 61, "UPTIME", 1, muted_r, muted_g, muted_b);
 
-    draw_text(fb, 215, 77, "--:--:--", 2,
-              white_r, white_g, white_b);
+    char uptime[16];
+
+    unsigned hours = stats->uptime_seconds / 3600;
+    unsigned minutes = (stats->uptime_seconds % 3600) / 60;
+    unsigned seconds = stats->uptime_seconds % 60;
+
+    snprintf(uptime, sizeof(uptime), "%02u:%02u:%02u", hours, minutes, seconds);
+
+    draw_text(fb, 215, 77, uptime, 2, white_r, white_g, white_b);
 
     // TPS
-    draw_text(fb, 25, 110, "TPS", 1,
-              muted_r, muted_g, muted_b);
+    draw_text(fb, 25, 110, "TPS", 1, muted_r, muted_g, muted_b);
 
-    draw_text(fb, 25, 126, "--.-", 2,
-              white_r, white_g, white_b);
+    char tps_text[16];
+
+    snprintf(tps_text, sizeof(tps_text), "%.1f", stats->tps);
+
+    draw_text(fb, 25, 126, tps_text, 2, white_r, white_g, white_b);
 
     // RAM
-    draw_text(fb, 215, 110, "RAM USED", 1,
-              muted_r, muted_g, muted_b);
+    draw_text(fb, 215, 110, "RAM USED", 1, muted_r, muted_g, muted_b);
 
-    draw_text(fb, 215, 126, "-- MB", 2,
-              white_r, white_g, white_b);
+    char ram_text[20];
+
+    unsigned ram_tenths_mb = (unsigned)(((uint64_t)stats->ram_used_bytes * 10) / 1048576);
+
+    snprintf(ram_text, sizeof(ram_text), "%u.%u MB", ram_tenths_mb / 10, ram_tenths_mb % 10);
+
+    draw_text(fb, 215, 126, ram_text, 2, white_r, white_g, white_b);
 
     // CONNECTION
-    draw_text(fb, 25, 160, "CONNECTION", 1,
-              white_r, white_g, white_b);
+    draw_text(fb, 25, 160, "CONNECTION", 1, white_r, white_g, white_b);
 
-    draw_text(fb, 25, 177, "IP: --.--.--.--", 1,
-              muted_r, muted_g, muted_b);
+    char ip_text[24];
 
-    draw_text(fb, 25, 195, "PORT: 25565", 1,
-              muted_r, muted_g, muted_b);
+    snprintf(ip_text, sizeof(ip_text), "IP: %s", stats->ip_address);
+
+    draw_text(fb, 25, 177, ip_text, 1, muted_r, muted_g, muted_b);
+
+    draw_text(fb, 25, 195, "PORT: 25565", 1, muted_r, muted_g, muted_b);
 
     // PERFORMANCE
     draw_text(fb, 215, 160, "PERFORMANCE", 1,

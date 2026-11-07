@@ -11,4 +11,5 @@ int command_teleport(PlayerData *p,double x,double y,double z);
 void command_creative_slot(int fd);
 int server_command(PlayerData *p,const char *text);
 void command_tick(double elapsed);
+double command_get_tps(void);
 #endif
