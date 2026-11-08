@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "dashboard.h"
+#include "activity_log.h"
 
 #define SCREEN_W 400
 #define SCREEN_H 240
@@ -110,13 +111,7 @@ static void draw_char(
     for (int row = 0; row < 5; row++) {
         for (int col = 0; col < 3; col++) {
             if (glyph[row] & (1 << (2 - col))) {
-                draw_round_rect(
-                    fb,
-                    x + col * scale,
-                    y + row * scale,
-                    scale, scale, 0,
-                    r, g, b
-                );
+                draw_round_rect(fb, x + col * scale, y + row * scale, scale, scale, 0, r, g, b);
             }
         }
     }
@@ -134,7 +129,52 @@ static void draw_text(
     }
 }
 
-static PrintConsole bottom_console;
+#define BOTTOM_W 320
+#define BOTTOM_H 240
+
+static void bottom_pixel(
+    u8 *fb, int x, int y,
+    u8 r, u8 g, u8 b
+) {
+    if (!fb || x < 0 || x >= BOTTOM_W ||y < 0 || y >= BOTTOM_H) return;
+
+    int offset = (x * 240 + (239 - y)) * 3;
+
+    fb[offset] = r;
+    fb[offset + 1] = g;
+    fb[offset + 2] = b;
+}
+
+static void bottom_rect(
+    u8 *fb, int x, int y, int w, int h,
+    u8 r, u8 g, u8 b
+) {
+    for (int py = y; py < y + h; py++) {
+        for (int px = x; px < x + w; px++) {
+            bottom_pixel(fb, px, py, r, g, b);
+        }
+    }
+}
+
+static void bottom_text(
+    u8 *fb, int x, int y,
+    const char *text,
+    u8 r, u8 g, u8 b
+) {
+    while (*text && x < BOTTOM_W - 3) {
+        const u8 *glyph = get_glyph(*text);
+
+        for (int row = 0; row < 5; row++) {
+            for (int col = 0; col < 3; col++) {
+                if (glyph[row] & (1 << (2 - col))) {
+                    bottom_pixel(fb, x + col, y + row, r, g, b);
+                }
+            }
+        }
+        x += 4;
+        text++;
+    }
+}
 
 static void put_pixel(
     u8 *fb, int x, int y,
@@ -183,32 +223,20 @@ static void draw_round_rect(
 }
 
 static void draw_background(u8 *fb) {
-    draw_round_rect(
-        fb, 0, 0, SCREEN_W, SCREEN_H, 0,
-        BG_R, BG_G, BG_B
-    );
+    draw_round_rect(fb, 0, 0, SCREEN_W, SCREEN_H, 0, BG_R, BG_G, BG_B);
 
     // Panneau principal
-    draw_round_rect(
-        fb, 8, 8, 384, 224, 8,
-        PANEL_R, PANEL_G, PANEL_B
-    );
+    draw_round_rect(fb, 8, 8, 384, 224, 8, PANEL_R, PANEL_G, PANEL_B);
 
     // Cartes statistiques
-    draw_round_rect(fb, 16, 55, 178, 43, 5,
-                    CARD_R, CARD_G, CARD_B);
-    draw_round_rect(fb, 206, 55, 178, 43, 5,
-                    CARD_R, CARD_G, CARD_B);
-    draw_round_rect(fb, 16, 104, 178, 43, 5,
-                    CARD_R, CARD_G, CARD_B);
-    draw_round_rect(fb, 206, 104, 178, 43, 5,
-                    CARD_R, CARD_G, CARD_B);
+    draw_round_rect(fb, 16, 55, 178, 43, 5, CARD_R, CARD_G, CARD_B);
+    draw_round_rect(fb, 206, 55, 178, 43, 5, CARD_R, CARD_G, CARD_B);
+    draw_round_rect(fb, 16, 104, 178, 43, 5, CARD_R, CARD_G, CARD_B);
+    draw_round_rect(fb, 206, 104, 178, 43, 5, CARD_R, CARD_G, CARD_B);
 
     // Panneaux Connection et Performance
-    draw_round_rect(fb, 16, 153, 178, 65, 5,
-                    CARD_R, CARD_G, CARD_B);
-    draw_round_rect(fb, 206, 153, 178, 65, 5,
-                    CARD_R, CARD_G, CARD_B);
+    draw_round_rect(fb, 16, 153, 178, 65, 5, CARD_R, CARD_G, CARD_B);
+    draw_round_rect(fb, 206, 153, 178, 65, 5, CARD_R, CARD_G, CARD_B);
 
     // Séparateur de l'en-tête
     for (int x = 16; x < 384; x++) {
@@ -217,28 +245,13 @@ static void draw_background(u8 *fb) {
 
     // Barres d'historique TPS : hauteur provisoire uniforme
     for (int i = 0; i < 12; i++) {
-        draw_round_rect(
-            fb,
-            212 + i * 14,
-            185,
-            12,
-            16,
-            2,
-            GREEN_R, GREEN_G, GREEN_B
-        );
+        draw_round_rect(fb, 212 + i * 14, 185, 12, 16, 2, GREEN_R, GREEN_G, GREEN_B);
     }
 }
 
 void dashboard_init(void) {
-    // Console uniquement sur l'écran inférieur.
-    consoleInit(GFX_BOTTOM, &bottom_console);
-    consoleSelect(&bottom_console);
-    consoleClear();
-
-    printf("\x1b[32;1m");
-    printf("BARECTR SERVER LOG\n");
-    printf("==============================\n");
-    printf("\x1b[0m");
+    // No console initialization.
+    // Both screens are rendered using framebuffers.
 }
 
 
@@ -259,30 +272,23 @@ void dashboard_render(const DashboardStats *stats) {
     const u8 muted_b = 190;
 
     // HEADER
-    draw_text(fb, 20, 17, "BARECTR", 2,
-              white_r, white_g, white_b);
+    draw_text(fb, 20, 17, "BARECTR", 2, white_r, white_g, white_b);
 
-    draw_text(fb, 20, 35, "SERVER DASHBOARD", 1,
-              muted_r, muted_g, muted_b);
+    draw_text(fb, 20, 35, "SERVER DASHBOARD", 1, muted_r, muted_g, muted_b);
 
     if (stats->server_ready) {
-        draw_text(fb, 330, 20, "ONLINE", 1,
-                  GREEN_R, GREEN_G, GREEN_B);
+        draw_text(fb, 330, 20, "ONLINE", 1, GREEN_R, GREEN_G, GREEN_B);
     } else {
-        draw_text(fb, 322, 20, "OFFLINE", 1,
-                  235, 180, 80);
+        draw_text(fb, 322, 20, "OFFLINE", 1, 235, 180, 80);
     }
 
     // PLAYERS
-    draw_text(fb, 25, 61, "PLAYERS", 1,
-              muted_r, muted_g, muted_b);
+    draw_text(fb, 25, 61, "PLAYERS", 1, muted_r, muted_g, muted_b);
 
     char players[16];
-    snprintf(players, sizeof(players), "%d / %d",
-             stats->players, stats->max_players);
+    snprintf(players, sizeof(players), "%d / %d", stats->players, stats->max_players);
 
-    draw_text(fb, 25, 77, players, 2,
-              white_r, white_g, white_b);
+    draw_text(fb, 25, 77, players, 2, white_r, white_g, white_b);
 
     // UPTIME
     draw_text(fb, 215, 61, "UPTIME", 1, muted_r, muted_g, muted_b);
@@ -329,20 +335,98 @@ void dashboard_render(const DashboardStats *stats) {
     draw_text(fb, 25, 195, "PORT: 25565", 1, muted_r, muted_g, muted_b);
 
     // PERFORMANCE
-    draw_text(fb, 215, 160, "PERFORMANCE", 1,
-              white_r, white_g, white_b);
-
-    draw_text(fb, 215, 177, "TPS HISTORY", 1,
-              muted_r, muted_g, muted_b);
-
-    draw_text(fb, 215, 202, "WAITING", 1,
-              GREEN_R, GREEN_G, GREEN_B);
+    draw_text(fb, 215, 160, "PERFORMANCE", 1, white_r, white_g, white_b);
+    draw_text(fb, 215, 177, "TPS HISTORY", 1, muted_r, muted_g, muted_b);
+    draw_text(fb, 215, 202, "WAITING", 1, GREEN_R, GREEN_G, GREEN_B);
 
     // FOOTER
-    draw_text(fb, 20, 222, "WI-FI", 1,
-              muted_r, muted_g, muted_b);
-
-    draw_text(fb, 340, 222, "--", 1,
-              muted_r, muted_g, muted_b);
+    draw_text(fb, 20, 222, "WI-FI", 1, muted_r, muted_g, muted_b);
+    draw_text(fb, 340, 222, "--", 1, muted_r, muted_g, muted_b);
 }
 
+void dashboard_render_activity(void) {
+    u8 *fb = gfxGetFramebuffer(
+        GFX_BOTTOM,
+        GFX_LEFT,
+        NULL,
+        NULL
+    );
+
+    if (!fb) return;
+
+    // Background
+    bottom_rect(fb, 0, 0, 320, 240, 10, 13, 17);
+
+    // Main panel
+    bottom_rect(fb, 6, 6, 308, 228, 24, 34, 46);
+
+    // Header
+    bottom_text(fb, 14, 12, "SERVER ACTIVITY", 235, 240, 245);
+    bottom_text(fb, 250, 12, "30 EVENTS", 155, 174, 190);
+    bottom_rect(fb, 12, 22, 296, 1, 105, 126, 145);
+
+    int count = activity_log_get_count();
+
+    for (int i = 0; i < ACTIVITY_LOG_CAPACITY; i++) {
+        int y = 26 + i * 7;
+
+        bottom_rect(
+            fb, 12, y - 1, 296, 7,
+            (i % 2 == 0) ? 30 : 26,
+            (i % 2 == 0) ? 42 : 38,
+            (i % 2 == 0) ? 55 : 50
+        );
+
+        if (i >= count) continue;
+
+        const ActivityEntry *entry = activity_log_get(i);
+        if (!entry) continue;
+
+        // Relative timestamp
+        char timestamp[12];
+
+        snprintf(timestamp, sizeof(timestamp), "%02u:%02u", entry->uptime_seconds / 60, entry->uptime_seconds % 60);
+
+        bottom_text(fb, 16, y, timestamp, 155, 174, 190);
+
+        // Event type and color
+        const char *type = "INFO";
+        u8 r = 155, g = 174, b = 190;
+
+        switch (entry->type) {
+            case LOG_INFO:
+                type = "INFO";
+                break;
+
+            case LOG_JOIN:
+                type = "JOIN";
+                r = 78; g = 205; b = 139;
+                break;
+
+            case LOG_LEAVE:
+                type = "LEAVE";
+                r = 235; g = 180; b = 80;
+                break;
+
+            case LOG_COMMAND:
+                type = "CMD";
+                r = 100; g = 170; b = 245;
+                break;
+
+            case LOG_WARNING:
+                type = "WARN";
+                r = 245; g = 180; b = 70;
+                break;
+
+            case LOG_ERROR:
+                type = "ERROR";
+                r = 245; g = 90; b = 90;
+                break;
+        }
+
+        bottom_text(fb, 60, y, type, r, g, b);
+
+        // Event message
+        bottom_text(fb, 108, y, entry->message, 220, 225, 230);
+    }
+}

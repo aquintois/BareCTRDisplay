@@ -6,6 +6,7 @@
 #include "procedures.h"
 #include "transport.h"
 #include "redstone.h"
+#include "activity_log.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -54,6 +55,11 @@ int command_teleport(PlayerData *p,double x,double y,double z) {
 }
 int server_command(PlayerData *p,const char *text) {
   int slot=p-player_data;char extra;
+
+  char log_message[ACTIVITY_MESSAGE_MAX];
+  snprintf(log_message, sizeof(log_message), "%s: %.60s", p->name, text);
+  activity_log_add(LOG_COMMAND, log_message, server_uptime_seconds());
+
   if(!strcmp(text,"!tps")) {
     char b[160];double ratio=transport_raw_bytes?100.0*transport_wire_bytes/transport_raw_bytes:0;
     snprintf(b,sizeof(b),"TPS %.1f/20 | network %.1f%% of raw | circuits %d pending, %u overflows",measured_tps,ratio,circuit_pending(),circuit_overflows());reply(p,b);return 1;
