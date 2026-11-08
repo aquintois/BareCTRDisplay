@@ -31,12 +31,7 @@ void activity_log_add(
     entries[index].type = type;
     entries[index].uptime_seconds = uptime_seconds;
 
-    snprintf(
-        entries[index].message,
-        sizeof(entries[index].message),
-        "%s",
-        message ? message : ""
-    );
+    snprintf(entries[index].message, sizeof(entries[index].message), "%s", message ? message : "");
 }
 
 int activity_log_get_count(void) {

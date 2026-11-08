@@ -475,9 +475,6 @@ int main () {
 
   server_start_time_us = get_program_time();
   activity_log_add(LOG_INFO, "Server started", 0);
-
-  // TODO: Remove this line if it works
-  // int64_t server_start_time = get_program_time();
   
   printf("Serveur ecoute sur le port %d...\n", PORT);
 
@@ -514,12 +511,7 @@ int main () {
       stats.ram_used_bytes = (uint32_t)memory_info.uordblks;
 
       // Adresse IP
-      snprintf(
-        stats.ip_address,
-        sizeof(stats.ip_address),
-        "%s",
-        server_ip
-      );
+      snprintf(stats.ip_address, sizeof(stats.ip_address), "%s", server_ip);
 
       dashboard_render(&stats);
       dashboard_render_activity();
