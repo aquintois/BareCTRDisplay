@@ -21,6 +21,7 @@
 #include "structures.h"
 #include "serialize.h"
 #include "procedures.h"
+#include "activity_log.h"
 
 int client_states[MAX_PLAYERS * 2];
 
@@ -206,6 +207,14 @@ void handlePlayerJoin (PlayerData* player) {
 
 void disconnectClient (int *client_fd, int cause) {
   if (*client_fd == -1) return;
+
+  PlayerData *player;
+  if (!getPlayerData(*client_fd, &player)) {
+      char message[ACTIVITY_MESSAGE_MAX];
+      snprintf(message, sizeof(message), "%s left the server", player->name);
+      activity_log_add(LOG_LEAVE, message, server_uptime_seconds());
+  }
+
   transport_close(*client_fd);
   client_count --;
   setClientState(*client_fd, STATE_NONE);

@@ -18,6 +18,7 @@
 #include <math.h>
 #include <sys/stat.h>
 #include "dashboard.h"
+#include "activity_log.h"
 
 #ifndef CLOCK_REALTIME
 #define CLOCK_REALTIME 0
@@ -41,6 +42,16 @@
 #define SOC_ALIGN       0x1000
 #define SOC_BUFFERSIZE  0x100000
 static u32 *soc_sharedmem = NULL;
+
+static int64_t server_start_time_us = 0;
+
+unsigned int server_uptime_seconds(void) {
+    if (server_start_time_us == 0) return 0;
+
+    int64_t elapsed = get_program_time() - server_start_time_us;
+
+    return elapsed > 0 ? (unsigned int)(elapsed / 1000000) : 0;
+}
 // ----------------------------------------------
 
 /**
@@ -102,6 +113,7 @@ void handlePacket (int client_fd, int length, int packet_id, int state) {
 
         PlayerData *player;
         if (getPlayerData(client_fd, &player)) break;
+        activity_log_add(LOG_JOIN, "Player joined", server_uptime_seconds());
         spawnPlayer(player);
 
         for (int i = 0; i < MAX_PLAYERS; i ++) {
@@ -352,6 +364,8 @@ void handlePacket (int client_fd, int length, int packet_id, int state) {
 }
 
 int main () {
+  activity_log_init();
+  
   gfxInitDefault();
   dashboard_init();
 
@@ -459,7 +473,11 @@ int main () {
 
   server_ready = true;
 
-  int64_t server_start_time = get_program_time();
+  server_start_time_us = get_program_time();
+  activity_log_add(LOG_INFO, "Server started", 0);
+
+  // TODO: Remove this line if it works
+  // int64_t server_start_time = get_program_time();
   
   printf("Serveur ecoute sur le port %d...\n", PORT);
 
@@ -488,9 +506,7 @@ int main () {
       stats.tps = (float)command_get_tps();
 
       // Uptime
-      int64_t elapsed = get_program_time() - server_start_time;
-
-      stats.uptime_seconds = elapsed > 0 ? (uint32_t)(elapsed / 1000000) : 0;
+      stats.uptime_seconds = server_uptime_seconds();
 
       // RAM allouée sur le tas
       struct mallinfo memory_info = mallinfo();
