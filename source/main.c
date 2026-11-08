@@ -522,6 +522,7 @@ int main () {
       );
 
       dashboard_render(&stats);
+      dashboard_render_activity();
 
       // Envoyer les modifications et échanger les buffers
       gfxFlushBuffers();

@@ -21,5 +21,6 @@ typedef struct {
 
 void dashboard_init(void);
 void dashboard_render(const DashboardStats *stats);
+void dashboard_render_activity(void);
 
 #endif
