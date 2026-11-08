@@ -5,6 +5,8 @@
 #include "activity_log.h"
 #include "globals.h"
 #include "commands.h"
+#include "procedures.h"
+#include "packets.h"
 
 #define SCREEN_W 400
 #define SCREEN_H 240
@@ -105,6 +107,16 @@ static char player_action_status[32] = "";
 
 static int dashboard_player_online(int i) {
     return i >= 0 && i < MAX_PLAYERS && player_data[i].client_fd >= 0 && !(player_data[i].flags & 0x20);
+}
+
+static void dashboard_heal_player(PlayerData *player) {
+    if (!player || player->client_fd < 0) return;
+
+    player->health = 20;
+    player->hunger = 20;
+    player->saturation = 20;
+
+    sc_setHealth(player->client_fd, 20, 20, 20);
 }
 
 static void draw_round_rect(
@@ -524,21 +536,24 @@ void dashboard_render_players(void) {
 
             bottom_text(fb, 20, 49, player->name, 235, 240, 245);
 
-            // TP HOME button
-            bottom_rect(fb, 12, 75, 296, 38, 35, 85, 65);
-            bottom_text(fb, 112, 89, "TP HOME", 235, 240, 245);
+            // TP HOME
+            bottom_rect(fb, 12, 65, 296, 30, 35, 85, 65);
+            bottom_text(fb, 25, 76, "TP HOME  X:-39 Y:66 Z:-57", 235, 240, 245);
 
-            // Destination
-            bottom_text(fb, 20, 125, "DESTINATION:", 155, 174, 190);
+            // HEAL
+            bottom_rect(fb, 12, 101, 296, 30, 35, 75, 55);
+            bottom_text(fb, 132, 112, "HEAL", 235, 240, 245);
 
-            bottom_text(fb, 20, 138, "X -39  Y 66  Z -57", 235, 240, 245);
+            // KICK
+            bottom_rect(fb, 12, 137, 296, 30, 100, 40, 40);
+            bottom_text(fb, 137, 148, "KICK", 235, 240, 245);
 
             // Action result
             bottom_text(fb, 20, 163, player_action_status, 130, 205, 150);
 
             // Back button
-            bottom_rect(fb, 12, 188, 100, 30, 45, 50, 60);
-            bottom_text(fb, 43, 199, "BACK", 235, 240, 245);
+            bottom_rect(fb, 12, 195, 100, 30, 45, 50, 60);
+            bottom_text(fb, 43, 206, "BACK", 235, 240, 245);
 
             return;
         }
@@ -664,7 +679,7 @@ void dashboard_handle_touch(int x, int y) {
     }
 
     // Back button.
-    if (x >= 12 && x <= 112 && y >= 188 && y <= 218) {
+    if (x >= 12 && x <= 112 && y >= 195 && y <= 225) {
         selected_player = -1;
         player_action_status[0] = '\0';
         return;
@@ -685,5 +700,41 @@ void dashboard_handle_touch(int x, int y) {
         } else {
             snprintf(player_action_status, sizeof(player_action_status), "TELEPORT FAILED");
         }
+    }
+
+    // HEAL
+    if (x >= 12 && x <= 308 &&
+        y >= 101 && y <= 131) {
+
+        if (!dashboard_player_online(selected_player)) {
+            selected_player = -1;
+            return;
+        }
+
+        dashboard_heal_player(&player_data[selected_player]);
+
+        snprintf(player_action_status, sizeof(player_action_status), "PLAYER HEALED");
+        return;
+    }
+
+    // KICK
+    if (x >= 12 && x <= 308 &&
+        y >= 137 && y <= 167) {
+
+        if (!dashboard_player_online(selected_player)) {
+            selected_player = -1;
+            return;
+        }
+
+        PlayerData *player = &player_data[selected_player];
+
+        // Disconnect the selected player cleanly.
+        disconnectClient(&player->client_fd, 0);
+
+        // Return to the player list.
+        selected_player = -1;
+        player_action_status[0] = '\0';
+
+        return;
     }
 }
