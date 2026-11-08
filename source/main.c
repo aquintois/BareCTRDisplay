@@ -503,6 +503,13 @@ int main () {
           dashboard_cycle_tab(1);
       }
 
+      if (kDown & KEY_TOUCH) {
+        touchPosition touch;
+        hidTouchRead(&touch);
+
+        dashboard_handle_touch(touch.px, touch.py);
+      }
+
       DashboardStats stats = {0};
 
       stats.server_ready = server_ready;

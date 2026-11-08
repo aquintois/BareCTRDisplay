@@ -3,6 +3,8 @@
 #include <string.h>
 #include "dashboard.h"
 #include "activity_log.h"
+#include "globals.h"
+#include "commands.h"
 
 #define SCREEN_W 400
 #define SCREEN_H 240
@@ -92,6 +94,17 @@ static const u8 *get_glyph(char c) {
         case '%': return percent;
         default: return space;
     }
+}
+
+#define HOME_X (-39)
+#define HOME_Y 66
+#define HOME_Z (-57)
+
+static int selected_player = -1;
+static char player_action_status[32] = "";
+
+static int dashboard_player_online(int i) {
+    return i >= 0 && i < MAX_PLAYERS && player_data[i].client_fd >= 0 && !(player_data[i].flags & 0x20);
 }
 
 static void draw_round_rect(
@@ -491,11 +504,116 @@ void dashboard_render_activity(void) {
     }
 }
 
+void dashboard_render_players(void) {
+    u8 *fb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
+    if (!fb) return;
+
+    bottom_rect(fb, 0, 0, 320, 240, 10, 13, 17);
+    bottom_rect(fb, 6, 6, 308, 228, 24, 34, 46);
+
+    if (selected_player >= 0) {
+        if (!dashboard_player_online(selected_player)) {
+            selected_player = -1;
+            player_action_status[0] = '\0';
+        } else {
+            PlayerData *player = &player_data[selected_player];
+
+            bottom_text(fb, 14, 12, "PLAYER ACTIONS", 235, 240, 245);
+            bottom_rect(fb, 12, 21, 296, 1, 105, 126, 145);
+            draw_bottom_tabs(fb);
+
+            bottom_text(fb, 20, 49, player->name, 235, 240, 245);
+
+            // TP HOME button
+            bottom_rect(fb, 12, 75, 296, 38, 35, 85, 65);
+            bottom_text(fb, 112, 89, "TP HOME", 235, 240, 245);
+
+            // Destination
+            bottom_text(fb, 20, 125, "DESTINATION:", 155, 174, 190);
+
+            bottom_text(fb, 20, 138, "X -39  Y 66  Z -57", 235, 240, 245);
+
+            // Action result
+            bottom_text(fb, 20, 163, player_action_status, 130, 205, 150);
+
+            // Back button
+            bottom_rect(fb, 12, 188, 100, 30, 45, 50, 60);
+            bottom_text(fb, 43, 199, "BACK", 235, 240, 245);
+
+            return;
+        }
+    }
+
+    // Count players who have finished loading.
+    int online_count = 0;
+
+    for (int i = 0; i < MAX_PLAYERS; i++) {
+        PlayerData *player = &player_data[i];
+
+        if (player->client_fd >= 0 && !(player->flags & 0x20)) {
+            online_count++;
+        }
+    }
+
+    char header[32];
+    snprintf(header, sizeof(header), "PLAYERS %d", online_count);
+
+    bottom_text(fb, 14, 12, header, 235, 240, 245);
+    bottom_rect(fb, 12, 21, 296, 1, 105, 126, 145);
+
+    draw_bottom_tabs(fb);
+
+    if (online_count == 0) {
+        bottom_text(fb, 88, 112, "NO PLAYERS ONLINE", 155, 174, 190);
+        return;
+    }
+
+    int row = 0;
+
+    for (int i = 0; i < MAX_PLAYERS; i++) {
+        PlayerData *player = &player_data[i];
+
+        // Ignore disconnected players and players still loading.
+        if (player->client_fd < 0 || (player->flags & 0x20)) {
+            continue;
+        }
+
+        int y = 42 + row * 46;
+
+        bottom_rect(fb, 12, y, 296, 42, 30, 42, 55);
+
+        // Player name.
+        char name[20];
+        snprintf(name, sizeof(name), "%.*s", 16, player->name);
+
+        bottom_text(fb, 20, y + 5, name, 235, 240, 245);
+
+        // Health and hunger.
+        char stats[32];
+        snprintf(stats, sizeof(stats), "HP %u/20  FOOD %u/20", (unsigned)player->health, (unsigned)player->hunger);
+
+        bottom_text(fb, 20, y + 16, stats, 130, 205, 150);
+
+        // Position.
+        char position[40];
+        snprintf(position, sizeof(position), "POS %d %d %d", (int)player->x, (int)player->y, (int)player->z);
+
+        bottom_text(fb, 20, y + 27, position, 155, 174, 190);
+
+        row++;
+    }
+}
+
 void dashboard_render_bottom(void) {
     if (current_tab == TAB_ACTIVITY) {
         dashboard_render_activity();
         return;
     }
+
+    if (current_tab == TAB_PLAYERS) {
+    dashboard_render_players();
+    return;
+}
 
     u8 *fb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
 
@@ -518,4 +636,54 @@ void dashboard_render_bottom(void) {
     draw_bottom_tabs(fb);
 
     bottom_text(fb, 116, 115, "COMING SOON", 155, 174, 190);
+}
+
+void dashboard_handle_touch(int x, int y) {
+    if (current_tab != TAB_PLAYERS) return;
+
+    // No player selected: detect a player card.
+    if (selected_player < 0) {
+        int row = 0;
+
+        for (int i = 0; i < MAX_PLAYERS; i++) {
+            if (!dashboard_player_online(i)) continue;
+
+            int card_y = 42 + row * 46;
+
+            if (x >= 12 && x <= 308 &&
+                y >= card_y && y <= card_y + 42) {
+                selected_player = i;
+                player_action_status[0] = '\0';
+                return;
+            }
+
+            row++;
+        }
+
+        return;
+    }
+
+    // Back button.
+    if (x >= 12 && x <= 112 && y >= 188 && y <= 218) {
+        selected_player = -1;
+        player_action_status[0] = '\0';
+        return;
+    }
+
+    // TP HOME button.
+    if (x >= 12 && x <= 308 && y >= 75 && y <= 113) {
+
+        if (!dashboard_player_online(selected_player)) {
+            selected_player = -1;
+            return;
+        }
+
+        PlayerData *player = &player_data[selected_player];
+
+        if (command_teleport(player, HOME_X, HOME_Y, HOME_Z) == 0) {
+            snprintf(player_action_status, sizeof(player_action_status), "TELEPORTED HOME");
+        } else {
+            snprintf(player_action_status, sizeof(player_action_status), "TELEPORT FAILED");
+        }
+    }
 }
