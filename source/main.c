@@ -1,6 +1,7 @@
 #include "commands.h"
 #include "interactions.h"
 #include <3ds.h>
+#include <3ds/services/soc.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -387,6 +388,21 @@ int main () {
       goto wait_and_exit;
   }
 
+  char server_ip[16] = "--.--.--.--";
+
+  struct in_addr ip_addr;
+  struct in_addr netmask;
+  struct in_addr broadcast;
+
+  if (SOCU_GetIPInfo(&ip_addr, &netmask, &broadcast) == 0) {
+    snprintf(
+        server_ip,
+        sizeof(server_ip),
+        "%s",
+        inet_ntoa(ip_addr)
+    );
+  }
+
   world_seed = splitmix64(world_seed);
   rng_seed = splitmix64(rng_seed);
 
@@ -442,6 +458,8 @@ int main () {
   }
 
   server_ready = true;
+
+  int64_t server_start_time = get_program_time();
   
   printf("Serveur ecoute sur le port %d...\n", PORT);
 
@@ -458,22 +476,47 @@ int main () {
     if (now - last_screen_update >= 50000) {
       hidScanInput();
       if (hidKeysDown() & KEY_START) break;
-      // gfxFlushBuffers(); gfxSwapBuffers(); last_screen_update = now;
 
-      DashboardStats stats;
+      DashboardStats stats = {0};
 
       stats.server_ready = server_ready;
       stats.players = client_count;
       stats.max_players = server_max_clients;
       stats.view_distance = server_view_distance;
 
+      // TPS réellement mesurés par BareCTR
+      stats.tps = (float)command_get_tps();
+
+      // Uptime
+      int64_t elapsed = get_program_time() - server_start_time;
+
+      stats.uptime_seconds = elapsed > 0 ? (uint32_t)(elapsed / 1000000) : 0;
+
+      // RAM allouée sur le tas
+      struct mallinfo memory_info = mallinfo();
+
+      stats.ram_used_bytes = (uint32_t)memory_info.uordblks;
+
+      // Adresse IP
+      snprintf(
+        stats.ip_address,
+        sizeof(stats.ip_address),
+        "%s",
+        server_ip
+      );
+
       dashboard_render(&stats);
 
+      // Envoyer les modifications et échanger les buffers
       gfxFlushBuffers();
       gfxSwapBuffers();
 
+      // Attendre le prochain rafraîchissement vertical
+      gspWaitForVBlank();
+
       last_screen_update = now;
     }
+
     if (client_count < server_max_clients) for (int i = 0; i < MAX_PLAYERS; i++) {
       if (clients[i] != -1) continue;
       addr_len = sizeof(client_addr);
