@@ -132,6 +132,24 @@ static void draw_text(
 #define BOTTOM_W 320
 #define BOTTOM_H 240
 
+static DashboardTab current_tab = TAB_ACTIVITY;
+
+void dashboard_cycle_tab(int direction) {
+    if (direction == 0) return;
+
+    int next = (int)current_tab + (direction > 0 ? 1 : -1);
+
+    if (next < 0) {
+        next = TAB_COUNT - 1;
+    }
+
+    if (next >= TAB_COUNT) {
+        next = 0;
+    }
+
+    current_tab = (DashboardTab)next;
+}
+
 static void bottom_pixel(
     u8 *fb, int x, int y,
     u8 r, u8 g, u8 b
@@ -173,6 +191,46 @@ static void bottom_text(
         }
         x += 4;
         text++;
+    }
+}
+
+static void draw_bottom_tabs(u8 *fb) {
+    static const char *labels[TAB_COUNT] = {
+        "ACTIVITY",
+        "CONSOLE",
+        "PLAYERS",
+        "LOGS",
+        "SETTINGS"
+    };
+
+    static const int positions[TAB_COUNT] = {
+        12, 70, 128, 186, 236
+    };
+
+    static const int widths[TAB_COUNT] = {
+        56, 56, 56, 48, 72
+    };
+
+    for (int i = 0; i < TAB_COUNT; i++) {
+        bool active = (i == current_tab);
+
+        bottom_rect(
+            fb,
+            positions[i], 24,
+            widths[i], 11,
+            active ? 38 : 30,
+            active ? 55 : 42,
+            active ? 72 : 55
+        );
+
+        int text_width = strlen(labels[i]) * 4;
+        int text_x = positions[i] + (widths[i] - text_width) / 2;
+
+        if (active) {
+            bottom_text(fb, text_x, 27, labels[i], 235, 240, 245);
+        } else {
+            bottom_text(fb, text_x, 27, labels[i], 155, 174, 190);
+        }
     }
 }
 
@@ -362,16 +420,18 @@ void dashboard_render_activity(void) {
 
     // Header
     bottom_text(fb, 14, 12, "SERVER ACTIVITY", 235, 240, 245);
-    bottom_text(fb, 250, 12, "30 EVENTS", 155, 174, 190);
-    bottom_rect(fb, 12, 22, 296, 1, 105, 126, 145);
+    bottom_rect(fb, 12, 21, 296, 1, 105, 126, 145);
+
+    // Navigation
+    draw_bottom_tabs(fb);
 
     int count = activity_log_get_count();
 
     for (int i = 0; i < ACTIVITY_LOG_CAPACITY; i++) {
-        int y = 26 + i * 7;
+        int y = 39 + i * 6;
 
         bottom_rect(
-            fb, 12, y - 1, 296, 7,
+            fb, 12, y - 1, 296, 6,
             (i % 2 == 0) ? 30 : 26,
             (i % 2 == 0) ? 42 : 38,
             (i % 2 == 0) ? 55 : 50
@@ -429,4 +489,33 @@ void dashboard_render_activity(void) {
         // Event message
         bottom_text(fb, 108, y, entry->message, 220, 225, 230);
     }
+}
+
+void dashboard_render_bottom(void) {
+    if (current_tab == TAB_ACTIVITY) {
+        dashboard_render_activity();
+        return;
+    }
+
+    u8 *fb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
+
+    if (!fb) return;
+
+    bottom_rect(fb, 0, 0, 320, 240, 10, 13, 17);
+    bottom_rect(fb, 6, 6, 308, 228, 24, 34, 46);
+
+    const char *titles[TAB_COUNT] = {
+        "SERVER ACTIVITY",
+        "SERVER CONSOLE",
+        "CONNECTED PLAYERS",
+        "SERVER LOGS",
+        "SERVER SETTINGS"
+    };
+
+    bottom_text(fb, 14, 12, titles[current_tab], 235, 240, 245);
+    bottom_rect(fb, 12, 21, 296, 1, 105, 126, 145);
+
+    draw_bottom_tabs(fb);
+
+    bottom_text(fb, 116, 115, "COMING SOON", 155, 174, 190);
 }

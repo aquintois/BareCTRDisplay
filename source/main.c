@@ -490,7 +490,18 @@ int main () {
     int64_t now = get_program_time();
     if (now - last_screen_update >= 50000) {
       hidScanInput();
-      if (hidKeysDown() & KEY_START) break;
+
+      u32 kDown = hidKeysDown();
+
+      if (kDown & KEY_START) break;
+
+      if (kDown & KEY_L) {
+          dashboard_cycle_tab(-1);
+      }
+
+      if (kDown & KEY_R) {
+          dashboard_cycle_tab(1);
+      }
 
       DashboardStats stats = {0};
 
@@ -514,7 +525,7 @@ int main () {
       snprintf(stats.ip_address, sizeof(stats.ip_address), "%s", server_ip);
 
       dashboard_render(&stats);
-      dashboard_render_activity();
+      dashboard_render_bottom();
 
       // Envoyer les modifications et échanger les buffers
       gfxFlushBuffers();
