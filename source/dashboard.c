@@ -674,10 +674,39 @@ static void bitmap_draw_player(
     );
 }
 
-static void bitmap_get_block_color(
-    uint8_t block,
-    u8 *r, u8 *g, u8 *b
-) {
+static uint8_t bitmap_get_surface_block(int x, int z) {
+    int height = getHeightAt(x, z);
+
+    // Détecter l'eau au niveau de la mer.
+    if (height < 63) {
+        uint8_t water = getBlockAt(x, 63, z);
+
+        if (water == B_water || water == B_water_1 || water == B_water_2 || water == B_water_3 ||
+            water == B_water_4 || water == B_water_5 || water == B_water_6 || water == B_water_7 || water == B_ice) {
+            return water;
+        }
+    }
+
+    uint8_t surface = getBlockAt(x, height, z);
+
+    // Détecter les arbres et la végétation au-dessus du sol.
+    for (int y = height + 1; y <= height + 6 && y <= 255; y++) {
+        uint8_t block = getBlockAt(x, y, z);
+
+        if (block == B_air) continue;
+
+        if (block == B_oak_leaves || block == B_azalea_leaves || block == B_flowering_azalea_leaves || block == B_oak_log ||
+            block == B_cactus || block == B_snow || block == B_short_grass || block == B_fern || block == B_dead_bush) {
+            return block;
+        }
+
+        break;
+    }
+
+    return surface;
+}
+
+static void bitmap_block_color(uint8_t block, uint8_t *r, uint8_t *g, uint8_t *b) {
     switch (block) {
         case B_water:
         case B_water_1:
@@ -690,79 +719,82 @@ static void bitmap_get_block_color(
             *r = 35; *g = 105; *b = 190;
             break;
 
-        case B_sand:
-        case B_red_sand:
-            *r = 218; *g = 195; *b = 125;
+        case B_ice:
+            *r = 145; *g = 205; *b = 225;
             break;
 
-        case B_stone:
-        case B_granite:
-        case B_diorite:
-        case B_andesite:
-        case B_cobblestone:
-            *r = 115; *g = 120; *b = 125;
+        case B_sand:
+        case B_sandstone:
+            *r = 220; *g = 195; *b = 125;
+            break;
+
+        case B_red_sand:
+            *r = 190; *g = 105; *b = 65;
+            break;
+
+        case B_grass_block:
+            *r = 75; *g = 155; *b = 75;
+            break;
+
+        case B_snowy_grass_block:
+        case B_snow:
+        case B_snow_block:
+            *r = 220; *g = 230; *b = 240;
             break;
 
         case B_dirt:
         case B_coarse_dirt:
         case B_podzol:
-        case B_mud:
-            *r = 120; *g = 80; *b = 48;
+            *r = 125; *g = 85; *b = 55;
             break;
 
-        case B_snow:
-        case B_snow_block:
-        case B_snowy_grass_block:
-        case B_ice:
-            *r = 215; *g = 230; *b = 240;
+        case B_mud:
+            *r = 90; *g = 75; *b = 65;
+            break;
+
+        case B_stone:
+        case B_cobblestone:
+        case B_granite:
+        case B_diorite:
+        case B_andesite:
+        case B_gravel:
+            *r = 115; *g = 120; *b = 130;
             break;
 
         case B_oak_leaves:
         case B_azalea_leaves:
-            *r = 40; *g = 115; *b = 55;
+        case B_flowering_azalea_leaves:
+            *r = 35; *g = 115; *b = 55;
             break;
 
         case B_oak_log:
             *r = 105; *g = 75; *b = 45;
             break;
 
+        case B_cactus:
+            *r = 45; *g = 135; *b = 65;
+            break;
+
         case B_lava:
         case B_lava_2:
         case B_lava_4:
         case B_lava_6:
-            *r = 240; *g = 85; *b = 25;
+            *r = 245; *g = 85; *b = 20;
             break;
 
-        case B_grass_block:
-            *r = 75; *g = 155; *b = 65;
+        case B_short_grass:
+        case B_fern:
+            *r = 95; *g = 175; *b = 80;
             break;
 
-        case B_bedrock:
-            *r = 55; *g = 55; *b = 60;
+        case B_dead_bush:
+            *r = 155; *g = 125; *b = 75;
             break;
 
         default:
-            *r = 85; *g = 100; *b = 85;
+            *r = 75; *g = 80; *b = 85;
             break;
     }
-}
-
-static uint8_t bitmap_get_surface_block(int x, int z) {
-    int height = getHeightAt(x, z);
-
-    if (height < 0) height = 0;
-    if (height > 255) height = 255;
-
-    // Vérifier l'eau au niveau de la mer.
-    if (height < 63) {
-        uint8_t water = getBlockAt(x, 63, z);
-
-        if (water == B_water) {
-            return water;
-        }
-    }
-
-    return getBlockAt(x, height, z);
 }
 
 static void bitmap_update_cache(void) {
@@ -873,10 +905,10 @@ void dashboard_render_bitmap(void) {
     // Each cached cell fills exactly 2 x 2 pixels.
     for (int row = 0; row < MAP_ROWS; row++) {
         for (int col = 0; col < MAP_COLS; col++) {
-            uint8_t block = bitmap_cache[row * MAP_COLS + col];
+            int cache_index = row * MAP_COLS + col;
 
-            u8 r, g, b;
-            bitmap_get_block_color(block, &r, &g, &b);
+            uint8_t r, g, b;
+            bitmap_block_color(bitmap_cache[cache_index], &r, &g, &b);
 
             bottom_rect(fb, MAP_X + col * 2, MAP_Y + row * 2, 2, 2, r, g, b);
         }
