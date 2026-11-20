@@ -9,6 +9,8 @@
 #include "packets.h"
 #include "runtime.h"
 #include "chunkstream.h"
+#include "worldgen.h"
+#include "registries.h"
 
 #define SCREEN_W 400
 #define SCREEN_H 240
@@ -624,6 +626,18 @@ void dashboard_render_players(void) {
 #define MAP_H       137
 #define MAP_RANGE   64
 
+#define MAP_COLS    144
+#define MAP_ROWS    68
+
+#define MAP_RECENTER_THRESHOLD 48
+
+
+static int bitmap_center_x = 0;
+static int bitmap_center_z = 0;
+static bool bitmap_cache_valid = false;
+
+static uint8_t bitmap_cache[MAP_COLS * MAP_ROWS];
+
 static int selected_bitmap_player = -1;
 
 static const u8 bitmap_colors[][3] = {
@@ -660,74 +674,229 @@ static void bitmap_draw_player(
     );
 }
 
+static void bitmap_get_block_color(
+    uint8_t block,
+    u8 *r, u8 *g, u8 *b
+) {
+    switch (block) {
+        case B_water:
+        case B_water_1:
+        case B_water_2:
+        case B_water_3:
+        case B_water_4:
+        case B_water_5:
+        case B_water_6:
+        case B_water_7:
+            *r = 35; *g = 105; *b = 190;
+            break;
+
+        case B_sand:
+        case B_red_sand:
+            *r = 218; *g = 195; *b = 125;
+            break;
+
+        case B_stone:
+        case B_granite:
+        case B_diorite:
+        case B_andesite:
+        case B_cobblestone:
+            *r = 115; *g = 120; *b = 125;
+            break;
+
+        case B_dirt:
+        case B_coarse_dirt:
+        case B_podzol:
+        case B_mud:
+            *r = 120; *g = 80; *b = 48;
+            break;
+
+        case B_snow:
+        case B_snow_block:
+        case B_snowy_grass_block:
+        case B_ice:
+            *r = 215; *g = 230; *b = 240;
+            break;
+
+        case B_oak_leaves:
+        case B_azalea_leaves:
+            *r = 40; *g = 115; *b = 55;
+            break;
+
+        case B_oak_log:
+            *r = 105; *g = 75; *b = 45;
+            break;
+
+        case B_lava:
+        case B_lava_2:
+        case B_lava_4:
+        case B_lava_6:
+            *r = 240; *g = 85; *b = 25;
+            break;
+
+        case B_grass_block:
+            *r = 75; *g = 155; *b = 65;
+            break;
+
+        case B_bedrock:
+            *r = 55; *g = 55; *b = 60;
+            break;
+
+        default:
+            *r = 85; *g = 100; *b = 85;
+            break;
+    }
+}
+
+static uint8_t bitmap_get_surface_block(int x, int z) {
+    int height = getHeightAt(x, z);
+
+    if (height < 0) height = 0;
+    if (height > 255) height = 255;
+
+    // Vérifier l'eau au niveau de la mer.
+    if (height < 63) {
+        uint8_t water = getBlockAt(x, 63, z);
+
+        if (water == B_water) {
+            return water;
+        }
+    }
+
+    return getBlockAt(x, height, z);
+}
+
+static void bitmap_update_cache(void) {
+    for (int row = 0; row < MAP_ROWS; row++) {
+        for (int col = 0; col < MAP_COLS; col++) {
+
+            int dx = (col - MAP_COLS / 2) * MAP_RANGE / (MAP_COLS / 2);
+
+            int dz = (MAP_ROWS / 2 - row) * MAP_RANGE / (MAP_ROWS / 2);
+
+            int world_x = bitmap_center_x + dx;
+            int world_z = bitmap_center_z + dz;
+
+            bitmap_cache[row * MAP_COLS + col] = bitmap_get_surface_block(world_x, world_z);
+        }
+    }
+
+    bitmap_cache_valid = true;
+}
+
+static void bitmap_update_center(void) {
+    if (!bitmap_cache_valid) {
+        int total_x = 0;
+        int total_z = 0;
+        int count = 0;
+
+        for (int i = 0; i < MAX_PLAYERS; i++) {
+            if (!dashboard_player_online(i)) continue;
+
+            total_x += player_data[i].x;
+            total_z += player_data[i].z;
+            count++;
+        }
+
+        if (count > 0) {
+            bitmap_center_x = total_x / count;
+            bitmap_center_z = total_z / count;
+        }
+
+        bitmap_update_cache();
+        return;
+    }
+
+    // Le joueur sélectionné sert de référence pour le déplacement.
+    if (selected_bitmap_player < 0 ||
+        !dashboard_player_online(selected_bitmap_player)) {
+        return;
+    }
+
+    PlayerData *player = &player_data[selected_bitmap_player];
+
+    int dx = (int)player->x - bitmap_center_x;
+    int dz = (int)player->z - bitmap_center_z;
+
+    if (dx >= -MAP_RECENTER_THRESHOLD && dx <= MAP_RECENTER_THRESHOLD && dz >= -MAP_RECENTER_THRESHOLD && dz <= MAP_RECENTER_THRESHOLD) {
+        return;
+    }
+
+    // Le joueur approche du bord : on recentre la carte.
+    bitmap_center_x = player->x;
+    bitmap_center_z = player->z;
+
+    bitmap_update_cache();
+}
+
+
 void dashboard_render_bitmap(void) {
     u8 *fb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
     if (!fb) return;
 
+    // Background
     bottom_rect(fb, 0, 0, 320, 240, 10, 13, 17);
     bottom_rect(fb, 6, 6, 308, 228, 24, 34, 46);
 
+    // Header
     bottom_text(fb, 14, 12, "PLAYER BITMAP", 235, 240, 245);
     bottom_rect(fb, 12, 21, 296, 1, 105, 126, 145);
 
     draw_bottom_tabs(fb);
 
-    // Calcul du centre à partir des joueurs connectés.
-    int total_x = 0;
-    int total_z = 0;
+    // Count online players.
     int count = 0;
 
     for (int i = 0; i < MAX_PLAYERS; i++) {
-        if (!dashboard_player_online(i)) continue;
-
-        total_x += player_data[i].x;
-        total_z += player_data[i].z;
-        count++;
+        if (dashboard_player_online(i)) {
+            count++;
+        }
     }
 
+    // Clear selection if the player disconnected.
     if (selected_bitmap_player >= 0 &&
         !dashboard_player_online(selected_bitmap_player)) {
         selected_bitmap_player = -1;
     }
 
     if (count == 0) {
+        bitmap_cache_valid = false;
         bottom_text(fb, 105, 105, "NO PLAYERS ONLINE", 155, 174, 190);
         return;
     }
 
-    int center_x = total_x / count;
-    int center_z = total_z / count;
+    // Update the map only when necessary.
+    bitmap_update_center();
 
-    // Fond de la carte.
+    // Draw terrain background.
     bottom_rect(fb, MAP_X, MAP_Y, MAP_W, MAP_H, 15, 24, 32);
 
-    // Grille.
-    for (int x = MAP_X; x < MAP_X + MAP_W; x += 18) {
-        bottom_rect(fb, x, MAP_Y, 1, MAP_H, 30, 43, 53);
+    // Each cached cell fills exactly 2 x 2 pixels.
+    for (int row = 0; row < MAP_ROWS; row++) {
+        for (int col = 0; col < MAP_COLS; col++) {
+            uint8_t block = bitmap_cache[row * MAP_COLS + col];
+
+            u8 r, g, b;
+            bitmap_get_block_color(block, &r, &g, &b);
+
+            bottom_rect(fb, MAP_X + col * 2, MAP_Y + row * 2, 2, 2, r, g, b);
+        }
     }
 
-    for (int y = MAP_Y; y < MAP_Y + MAP_H; y += 18) {
-        bottom_rect(fb, MAP_X, y, MAP_W, 1, 30, 43, 53);
-    }
-
-    // Axes centraux.
-    bottom_rect(fb, MAP_X + MAP_W / 2, MAP_Y, 1, MAP_H, 65, 85, 95);
-    bottom_rect(fb, MAP_X, MAP_Y + MAP_H / 2, MAP_W, 1, 65, 85, 95);
-
-    // Marqueur du centre.
+    // Center marker.
     bottom_rect(fb, MAP_X + MAP_W / 2 - 2, MAP_Y + MAP_H / 2 - 2, 5, 5, 235, 240, 245);
 
-    // Affichage des joueurs.
+    // Draw online players.
     for (int i = 0; i < MAX_PLAYERS; i++) {
         if (!dashboard_player_online(i)) continue;
 
-        int dx = (int)player_data[i].x - center_x;
-        int dz = (int)player_data[i].z - center_z;
+        int dx = (int)player_data[i].x - bitmap_center_x;
+        int dz = (int)player_data[i].z - bitmap_center_z;
 
         int px = MAP_X + MAP_W / 2 + dx * (MAP_W / 2 - 5) / MAP_RANGE;
+
         int py = MAP_Y + MAP_H / 2 - dz * (MAP_H / 2 - 5) / MAP_RANGE;
 
-        // Limiter les marqueurs aux limites de la carte.
+        // Keep markers inside the map.
         if (px < MAP_X + 3) px = MAP_X + 3;
         if (px > MAP_X + MAP_W - 3) px = MAP_X + MAP_W - 3;
         if (py < MAP_Y + 3) py = MAP_Y + 3;
@@ -735,7 +904,7 @@ void dashboard_render_bitmap(void) {
 
         bitmap_draw_player(fb, px, py, i);
 
-        // Contour blanc pour le joueur sélectionné.
+        // White outline for selected player.
         if (i == selected_bitmap_player) {
             bottom_rect(fb, px - 4, py - 4, 9, 1, 235, 240, 245);
             bottom_rect(fb, px - 4, py + 4, 9, 1, 235, 240, 245);
@@ -744,7 +913,7 @@ void dashboard_render_bitmap(void) {
         }
     }
 
-    // Informations du joueur sélectionné.
+    // Selected player information.
     if (selected_bitmap_player >= 0) {
         PlayerData *player = &player_data[selected_bitmap_player];
 
@@ -756,12 +925,13 @@ void dashboard_render_bitmap(void) {
         bottom_text(fb, 16, 190, "TOUCH A PLAYER", 155, 174, 190);
     }
 
-    // Centre actuel.
+    // Current map center.
     char center_info[32];
-    snprintf(center_info, sizeof(center_info), "CENTER X:%d Z:%d", center_x, center_z);
+    snprintf(center_info, sizeof(center_info), "CENTER X:%d Z:%d", bitmap_center_x, bitmap_center_z);
 
     bottom_text(fb, 16, 205, center_info, 155, 174, 190);
 }
+
 
 void dashboard_render_settings(void) {
     u8 *fb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
@@ -890,25 +1060,7 @@ void dashboard_handle_touch(int x, int y) {
     }
 
     if (current_tab == TAB_BITMAP) {
-        int total_x = 0;
-        int total_z = 0;
-        int count = 0;
-
-        for (int i = 0; i < MAX_PLAYERS; i++) {
-            if (!dashboard_player_online(i)) continue;
-
-            total_x += player_data[i].x;
-            total_z += player_data[i].z;
-            count++;
-        }
-
-        if (count == 0) {
-            selected_bitmap_player = -1;
-            return;
-        }
-
-        int center_x = total_x / count;
-        int center_z = total_z / count;
+        if (!bitmap_cache_valid) return;
 
         selected_bitmap_player = -1;
         int best_distance = 100;
@@ -916,14 +1068,12 @@ void dashboard_handle_touch(int x, int y) {
         for (int i = 0; i < MAX_PLAYERS; i++) {
             if (!dashboard_player_online(i)) continue;
 
-            int dx = (int)player_data[i].x - center_x;
-            int dz = (int)player_data[i].z - center_z;
+            int dx = (int)player_data[i].x - bitmap_center_x;
+            int dz = (int)player_data[i].z - bitmap_center_z;
 
-            int px = MAP_X + MAP_W / 2
-                + dx * (MAP_W / 2 - 5) / MAP_RANGE;
+            int px = MAP_X + MAP_W / 2 + dx * (MAP_W / 2 - 5) / MAP_RANGE;
 
-            int py = MAP_Y + MAP_H / 2
-                - dz * (MAP_H / 2 - 5) / MAP_RANGE;
+            int py = MAP_Y + MAP_H / 2 - dz * (MAP_H / 2 - 5) / MAP_RANGE;
 
             if (px < MAP_X + 3) px = MAP_X + 3;
             if (px > MAP_X + MAP_W - 3) px = MAP_X + MAP_W - 3;
