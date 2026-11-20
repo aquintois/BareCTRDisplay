@@ -7,6 +7,8 @@
 #include "commands.h"
 #include "procedures.h"
 #include "packets.h"
+#include "runtime.h"
+#include "chunkstream.h"
 
 #define SCREEN_W 400
 #define SCREEN_H 240
@@ -619,6 +621,49 @@ void dashboard_render_players(void) {
     }
 }
 
+void dashboard_render_settings(void) {
+    u8 *fb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
+    if (!fb) return;
+
+    bottom_rect(fb, 0, 0, 320, 240, 10, 13, 17);
+    bottom_rect(fb, 6, 6, 308, 228, 24, 34, 46);
+
+    bottom_text(fb, 14, 12, "SERVER SETTINGS", 235, 240, 245);
+    bottom_rect(fb, 12, 21, 296, 1, 105, 126, 145);
+
+    draw_bottom_tabs(fb);
+
+    // VIEW DISTANCE
+    bottom_rect(fb, 12, 55, 296, 52, 30, 42, 55);
+    bottom_text(fb, 20, 65, "VIEW DISTANCE", 235, 240, 245);
+
+    char view_text[12];
+    snprintf(view_text, sizeof(view_text), "%d", server_view_distance);
+    bottom_text(fb, 155, 80, view_text, 130, 205, 150);
+
+    bottom_rect(fb, 205, 65, 40, 30, 65, 75, 90);
+    bottom_text(fb, 220, 77, "-", 235, 240, 245);
+
+    bottom_rect(fb, 260, 65, 40, 30, 65, 75, 90);
+    bottom_text(fb, 275, 77, "+", 235, 240, 245);
+
+    // MAX PLAYERS
+    bottom_rect(fb, 12, 120, 296, 52, 30, 42, 55);
+    bottom_text(fb, 20, 130, "MAX PLAYERS", 235, 240, 245);
+
+    char players_text[12];
+    snprintf(players_text, sizeof(players_text), "%d", server_max_clients);
+    bottom_text(fb, 155, 145, players_text, 130, 205, 150);
+
+    bottom_rect(fb, 205, 130, 40, 30, 65, 75, 90);
+    bottom_text(fb, 220, 142, "-", 235, 240, 245);
+
+    bottom_rect(fb, 260, 130, 40, 30, 65, 75, 90);
+    bottom_text(fb, 275, 142, "+", 235, 240, 245);
+
+    bottom_text(fb, 20, 195, "TOUCH +/- TO CHANGE", 155, 174, 190);
+}
+
 void dashboard_render_bottom(void) {
     if (current_tab == TAB_ACTIVITY) {
         dashboard_render_activity();
@@ -626,9 +671,14 @@ void dashboard_render_bottom(void) {
     }
 
     if (current_tab == TAB_PLAYERS) {
-    dashboard_render_players();
-    return;
-}
+        dashboard_render_players();
+        return;
+    }
+
+    if (current_tab == TAB_SETTINGS) {
+        dashboard_render_settings();
+        return;
+    }
 
     u8 *fb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
 
@@ -654,6 +704,42 @@ void dashboard_render_bottom(void) {
 }
 
 void dashboard_handle_touch(int x, int y) {
+    if (current_tab == TAB_SETTINGS) {
+        // View Distance: minus
+        if (x >= 205 && x <= 245 && y >= 65 && y <= 95) {
+            if (server_view_distance > 1) {
+                server_view_distance--;
+            }
+            return;
+        }
+
+        // View Distance: plus
+        if (x >= 260 && x <= 300 && y >= 65 && y <= 95) {
+            if (server_view_distance < 4) {
+                server_view_distance++;
+            }
+            return;
+        }
+
+        // Max Players: minus
+        if (x >= 205 && x <= 245 && y >= 130 && y <= 160) {
+            if (server_max_clients > 1) {
+                server_max_clients--;
+            }
+            return;
+        }
+
+        // Max Players: plus
+        if (x >= 260 && x <= 300 && y >= 130 && y <= 160) {
+            if (server_max_clients < 10) {
+                server_max_clients++;
+            }
+            return;
+        }
+
+        return;
+    }
+
     if (current_tab != TAB_PLAYERS) return;
 
     // No player selected: detect a player card.
