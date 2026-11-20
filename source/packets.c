@@ -331,6 +331,26 @@ int sc_setCenterChunk (int client_fd, int x, int y) {
   return 0;
 }
 
+// S->C Set Chunk Cache Radius
+int sc_setChunkCacheRadius(int client_fd, int radius) {
+    writeVarInt(client_fd, 1 + sizeVarInt(radius));
+    writeByte(client_fd, 0x58);
+    writeVarInt(client_fd, radius);
+    return 0;
+}
+
+// S->C Forget Level Chunk
+int sc_forgetLevelChunk(int client_fd, int x, int z) {
+    writeVarInt(client_fd, 9);
+    writeByte(client_fd, 0x21);
+
+    // Le protocole 1.21.8 attend Z avant X.
+    writeUint32(client_fd, z);
+    writeUint32(client_fd, x);
+
+    return 0;
+}
+
 // S->C Chunk Data and Update Light
 int sc_chunkDataAndUpdateLight (int client_fd, int _x, int _z) {
 

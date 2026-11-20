@@ -62,4 +62,7 @@ int sc_removeEntity (int client_fd, int entity_id);
 int sc_pickupItem (int client_fd, int collected, int collector, uint8_t count);
 int sc_registries (int client_fd);
 
+int sc_setChunkCacheRadius(int client_fd, int radius);
+int sc_forgetLevelChunk(int client_fd, int x, int z);
+
 #endif

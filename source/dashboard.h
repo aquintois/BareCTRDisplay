@@ -19,8 +19,21 @@ typedef struct {
 
 } DashboardStats;
 
+typedef enum {
+    TAB_ACTIVITY,
+    TAB_CONSOLE,
+    TAB_PLAYERS,
+    TAB_LOGS,
+    TAB_SETTINGS,
+    TAB_COUNT
+} DashboardTab;
+
 void dashboard_init(void);
 void dashboard_render(const DashboardStats *stats);
 void dashboard_render_activity(void);
+void dashboard_cycle_tab(int direction);
+void dashboard_render_bottom(void);
+void dashboard_render_players(void);
+void dashboard_handle_touch(int x, int y);
 
 #endif
