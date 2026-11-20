@@ -226,38 +226,35 @@ static void draw_bottom_tabs(u8 *fb) {
         "ACTIVITY",
         "CONSOLE",
         "PLAYERS",
+        "BITMAP",
         "LOGS",
         "SETTINGS"
     };
 
-    static const int positions[TAB_COUNT] = {
-        12, 70, 128, 186, 236
-    };
-
-    static const int widths[TAB_COUNT] = {
-        56, 56, 56, 48, 72
-    };
+    const int start_x = 12;
+    const int tab_width = 47;
+    const int spacing = 2;
 
     for (int i = 0; i < TAB_COUNT; i++) {
         bool active = (i == current_tab);
+        int x = start_x + i * (tab_width + spacing);
 
         bottom_rect(
-            fb,
-            positions[i], 24,
-            widths[i], 11,
+            fb, x, 24, tab_width, 11,
             active ? 38 : 30,
             active ? 55 : 42,
             active ? 72 : 55
         );
 
         int text_width = strlen(labels[i]) * 4;
-        int text_x = positions[i] + (widths[i] - text_width) / 2;
+        int text_x = x + (tab_width - text_width) / 2;
 
-        if (active) {
-            bottom_text(fb, text_x, 27, labels[i], 235, 240, 245);
-        } else {
-            bottom_text(fb, text_x, 27, labels[i], 155, 174, 190);
-        }
+        bottom_text(
+            fb, text_x, 27, labels[i],
+            active ? 235 : 155,
+            active ? 240 : 174,
+            active ? 245 : 190
+        );
     }
 }
 
@@ -621,6 +618,151 @@ void dashboard_render_players(void) {
     }
 }
 
+#define MAP_X       16
+#define MAP_Y       43
+#define MAP_W       288
+#define MAP_H       137
+#define MAP_RANGE   64
+
+static int selected_bitmap_player = -1;
+
+static const u8 bitmap_colors[][3] = {
+    {78, 205, 139},
+    {100, 170, 245},
+    {245, 180, 80},
+    {235, 100, 150},
+    {180, 140, 245},
+    {80, 210, 220},
+    {245, 110, 90},
+    {210, 210, 110}
+};
+
+static void bitmap_draw_player(
+    u8 *fb,
+    int x,
+    int y,
+    int index
+) {
+    const int color_count =
+        sizeof(bitmap_colors) / sizeof(bitmap_colors[0]);
+
+    const u8 *color = bitmap_colors[index % color_count];
+
+    bottom_rect(
+        fb,
+        x - 2,
+        y - 2,
+        5,
+        5,
+        color[0],
+        color[1],
+        color[2]
+    );
+}
+
+void dashboard_render_bitmap(void) {
+    u8 *fb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
+    if (!fb) return;
+
+    bottom_rect(fb, 0, 0, 320, 240, 10, 13, 17);
+    bottom_rect(fb, 6, 6, 308, 228, 24, 34, 46);
+
+    bottom_text(fb, 14, 12, "PLAYER BITMAP", 235, 240, 245);
+    bottom_rect(fb, 12, 21, 296, 1, 105, 126, 145);
+
+    draw_bottom_tabs(fb);
+
+    // Calcul du centre à partir des joueurs connectés.
+    int total_x = 0;
+    int total_z = 0;
+    int count = 0;
+
+    for (int i = 0; i < MAX_PLAYERS; i++) {
+        if (!dashboard_player_online(i)) continue;
+
+        total_x += player_data[i].x;
+        total_z += player_data[i].z;
+        count++;
+    }
+
+    if (selected_bitmap_player >= 0 &&
+        !dashboard_player_online(selected_bitmap_player)) {
+        selected_bitmap_player = -1;
+    }
+
+    if (count == 0) {
+        bottom_text(fb, 105, 105, "NO PLAYERS ONLINE", 155, 174, 190);
+        return;
+    }
+
+    int center_x = total_x / count;
+    int center_z = total_z / count;
+
+    // Fond de la carte.
+    bottom_rect(fb, MAP_X, MAP_Y, MAP_W, MAP_H, 15, 24, 32);
+
+    // Grille.
+    for (int x = MAP_X; x < MAP_X + MAP_W; x += 18) {
+        bottom_rect(fb, x, MAP_Y, 1, MAP_H, 30, 43, 53);
+    }
+
+    for (int y = MAP_Y; y < MAP_Y + MAP_H; y += 18) {
+        bottom_rect(fb, MAP_X, y, MAP_W, 1, 30, 43, 53);
+    }
+
+    // Axes centraux.
+    bottom_rect(fb, MAP_X + MAP_W / 2, MAP_Y, 1, MAP_H, 65, 85, 95);
+    bottom_rect(fb, MAP_X, MAP_Y + MAP_H / 2, MAP_W, 1, 65, 85, 95);
+
+    // Marqueur du centre.
+    bottom_rect(fb, MAP_X + MAP_W / 2 - 2, MAP_Y + MAP_H / 2 - 2, 5, 5, 235, 240, 245);
+
+    // Affichage des joueurs.
+    for (int i = 0; i < MAX_PLAYERS; i++) {
+        if (!dashboard_player_online(i)) continue;
+
+        int dx = (int)player_data[i].x - center_x;
+        int dz = (int)player_data[i].z - center_z;
+
+        int px = MAP_X + MAP_W / 2 + dx * (MAP_W / 2 - 5) / MAP_RANGE;
+        int py = MAP_Y + MAP_H / 2 - dz * (MAP_H / 2 - 5) / MAP_RANGE;
+
+        // Limiter les marqueurs aux limites de la carte.
+        if (px < MAP_X + 3) px = MAP_X + 3;
+        if (px > MAP_X + MAP_W - 3) px = MAP_X + MAP_W - 3;
+        if (py < MAP_Y + 3) py = MAP_Y + 3;
+        if (py > MAP_Y + MAP_H - 3) py = MAP_Y + MAP_H - 3;
+
+        bitmap_draw_player(fb, px, py, i);
+
+        // Contour blanc pour le joueur sélectionné.
+        if (i == selected_bitmap_player) {
+            bottom_rect(fb, px - 4, py - 4, 9, 1, 235, 240, 245);
+            bottom_rect(fb, px - 4, py + 4, 9, 1, 235, 240, 245);
+            bottom_rect(fb, px - 4, py - 3, 1, 7, 235, 240, 245);
+            bottom_rect(fb, px + 4, py - 3, 1, 7, 235, 240, 245);
+        }
+    }
+
+    // Informations du joueur sélectionné.
+    if (selected_bitmap_player >= 0) {
+        PlayerData *player = &player_data[selected_bitmap_player];
+
+        char info[64];
+        snprintf(info, sizeof(info), "%.*s X:%d Y:%d Z:%d", 16, player->name, (int)player->x, (int)player->y, (int)player->z);
+
+        bottom_text(fb, 16, 190, info, 235, 240, 245);
+    } else {
+        bottom_text(fb, 16, 190, "TOUCH A PLAYER", 155, 174, 190);
+    }
+
+    // Centre actuel.
+    char center_info[32];
+    snprintf(center_info, sizeof(center_info), "CENTER X:%d Z:%d", center_x, center_z);
+
+    bottom_text(fb, 16, 205, center_info, 155, 174, 190);
+}
+
 void dashboard_render_settings(void) {
     u8 *fb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
     if (!fb) return;
@@ -680,6 +822,11 @@ void dashboard_render_bottom(void) {
         return;
     }
 
+    if (current_tab == TAB_BITMAP) {
+        dashboard_render_bitmap();
+        return;
+    }
+
     u8 *fb = gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
 
     if (!fb) return;
@@ -691,9 +838,11 @@ void dashboard_render_bottom(void) {
         "SERVER ACTIVITY",
         "SERVER CONSOLE",
         "CONNECTED PLAYERS",
+        "PLAYER BITMAP",
         "SERVER LOGS",
         "SERVER SETTINGS"
     };
+
 
     bottom_text(fb, 14, 12, titles[current_tab], 235, 240, 245);
     bottom_rect(fb, 12, 21, 296, 1, 105, 126, 145);
@@ -735,6 +884,60 @@ void dashboard_handle_touch(int x, int y) {
                 server_max_clients++;
             }
             return;
+        }
+
+        return;
+    }
+
+    if (current_tab == TAB_BITMAP) {
+        int total_x = 0;
+        int total_z = 0;
+        int count = 0;
+
+        for (int i = 0; i < MAX_PLAYERS; i++) {
+            if (!dashboard_player_online(i)) continue;
+
+            total_x += player_data[i].x;
+            total_z += player_data[i].z;
+            count++;
+        }
+
+        if (count == 0) {
+            selected_bitmap_player = -1;
+            return;
+        }
+
+        int center_x = total_x / count;
+        int center_z = total_z / count;
+
+        selected_bitmap_player = -1;
+        int best_distance = 100;
+
+        for (int i = 0; i < MAX_PLAYERS; i++) {
+            if (!dashboard_player_online(i)) continue;
+
+            int dx = (int)player_data[i].x - center_x;
+            int dz = (int)player_data[i].z - center_z;
+
+            int px = MAP_X + MAP_W / 2
+                + dx * (MAP_W / 2 - 5) / MAP_RANGE;
+
+            int py = MAP_Y + MAP_H / 2
+                - dz * (MAP_H / 2 - 5) / MAP_RANGE;
+
+            if (px < MAP_X + 3) px = MAP_X + 3;
+            if (px > MAP_X + MAP_W - 3) px = MAP_X + MAP_W - 3;
+            if (py < MAP_Y + 3) py = MAP_Y + 3;
+            if (py > MAP_Y + MAP_H - 3) py = MAP_Y + MAP_H - 3;
+
+            int tx = x - px;
+            int ty = y - py;
+            int distance = tx * tx + ty * ty;
+
+            if (distance <= 100 && distance < best_distance) {
+                best_distance = distance;
+                selected_bitmap_player = i;
+            }
         }
 
         return;
